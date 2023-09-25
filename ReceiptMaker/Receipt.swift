@@ -81,7 +81,6 @@ func parseMainItemWithPrice(components: [String], menuItemStore: MenuItemsStore)
     guard let price = Double(priceString), let menuItem = menuItemStore.items.first(where: { $0.name == mainItem }) else {
         return nil
     }
-    print(price)
     
     return (mainItem, menuItem)
 }
@@ -106,11 +105,11 @@ func createReceiptString(companyName: String, tabdel: String, currentDate: Strin
                 continue
             }
             
-            receipt += "\(mainItem) (\(price)) x \(details.quantity)\n"
+            receipt += "\(mainItem) x \(details.quantity)\n"
             totalOrderPrice += Double(details.quantity) * price
             
             for (extraName, extraQuantity) in details.extras {
-                receipt += "     \(extraName) x \(extraQuantity)\n"
+                receipt += "     \(trimStringAfterFirstParenthesis(extraName)) x \(extraQuantity)\n"
             }
         }
     }
@@ -121,10 +120,16 @@ func createReceiptString(companyName: String, tabdel: String, currentDate: Strin
     POWERED BY AEXIR
     KITCHEN RECEIPT
     -----------------------------
-    TOTAL: $\(totalOrderPrice)
     """
     
     return receipt
 }
 
-
+func trimStringAfterFirstParenthesis(_ input: String) -> String {
+    if let range = input.range(of: "(") {
+        let trimmedString = input[..<range.lowerBound].trimmingCharacters(in: .whitespaces)
+        return String(trimmedString)
+    } else {
+        return input // If there is no opening parenthesis, return the original string
+    }
+}
