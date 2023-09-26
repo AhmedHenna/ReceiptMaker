@@ -97,19 +97,28 @@ func createReceiptString(companyName: String, tabdel: String, currentDate: Strin
 
     var totalOrderPrice: Double = 0.0
 
-    for (itemType, itemDetails) in typeDetails {
-        receipt += "\nType: \(itemType)\n"
-        for (mainItem, details) in itemDetails {
-            let menuItem = menuItemStore.items.first { $0.name == mainItem }
-            guard let price = menuItem?.price else {
-                continue
-            }
+    // Define a custom order for types in singular form
+    let customTypeOrder: [String] = ["Starter", "Main", "Side", "Drink"]
+
+    for itemType in customTypeOrder {
+        if let itemDetails = typeDetails.keys.first(where: { $0.lowercased().contains(itemType.lowercased()) }) {
+            receipt += "\nType: \(itemDetails)\n"
             
-            receipt += "\(mainItem) x \(details.quantity)\n"
-            totalOrderPrice += Double(details.quantity) * price
-            
-            for (extraName, extraQuantity) in details.extras {
-                receipt += "     \(trimStringAfterFirstParenthesis(extraName)) x \(extraQuantity)\n"
+            // Sort items within each type
+            if let items = typeDetails[itemDetails] {
+                for (mainItem, details) in items {
+                    let menuItem = menuItemStore.items.first { $0.name == mainItem }
+                    guard let price = menuItem?.price else {
+                        continue
+                    }
+                    
+                    receipt += "\(mainItem) x \(details.quantity)\n"
+                    totalOrderPrice += Double(details.quantity) * price
+                    
+                    for (extraName, extraQuantity) in details.extras {
+                        receipt += "     \(trimStringAfterFirstParenthesis(extraName)) x \(extraQuantity)\n"
+                    }
+                }
             }
         }
     }
@@ -120,6 +129,7 @@ func createReceiptString(companyName: String, tabdel: String, currentDate: Strin
     POWERED BY AEXIR
     KITCHEN RECEIPT
     -----------------------------
+    TOTAL: $\(totalOrderPrice)
     """
     
     return receipt

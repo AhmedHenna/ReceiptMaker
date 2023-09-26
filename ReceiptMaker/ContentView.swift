@@ -18,8 +18,8 @@ struct ContentView: View {
             let additionalMessage = "Please prepare the order quickly."
             let items = [
                 "Chocolate Donut: (3.0), Extras: Chocolate Sauce (0.52), Extras: Chocolate Sauce (0.52), Extras: Chocolate Sauce (0.52)",
-                "Soda Can: (15.0)",
-                "Strawberry Donut: (4.0)"
+                "Soda Can: (1.0)",
+                "Chocolate Donut: (3.0), Extras: Chocolate Sauce (0.52)"
             ]
 
             //here is where youll replace all the paramters with the ones you get from firestore
