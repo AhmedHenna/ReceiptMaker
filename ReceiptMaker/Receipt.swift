@@ -16,9 +16,12 @@ struct ReceiptItemDetails {
 func generateReceiptForKitchen(orderName: String, orderPrice: Double, tabdel: String, additionalMessage: String, arrivalTime: String, refundAmount: Double, tip: Double, items: [String], sizes: [String], mealDeals: [String], menuItemStore: MenuItemsStore) -> String {
     let companyName = "COMPANY NAME"
     let currentDate = getCurrentDate()
-    let typeDetails = organizeItemsByTypeAndExtras(items: items, menuItemStore: menuItemStore)
     
-    return createReceiptString(companyName: companyName, tabdel: tabdel, currentDate: currentDate, orderName: orderName, orderPrice: orderPrice, additionalMessage: additionalMessage, typeDetails: typeDetails, menuItemStore: menuItemStore)
+   let itemDetails = createItemsDetailsDictionary(items: items, menuItemStore: menuItemStore)
+    
+    let receipt = createReceiptString(companyName: companyName, tabdel: tabdel, currentDate: currentDate, orderName: orderName, additionalMessage: additionalMessage, itemDetails: itemDetails, menuItemStore: menuItemStore)
+
+   return receipt
 }
 
 func getCurrentDate() -> String {
@@ -27,40 +30,28 @@ func getCurrentDate() -> String {
     return dateFormatter.string(from: Date()).uppercased()
 }
 
-func organizeItemsByTypeAndExtras(items: [String], menuItemStore: MenuItemsStore) -> [String: [String: ReceiptItemDetails]] {
-    var typeDetails: [String: [String: ReceiptItemDetails]] = [:]
+func createItemsDetailsDictionary(items: [String], menuItemStore: MenuItemsStore) -> [String: [ReceiptItemDetails]]{
+    // Create a dictionary to group items by name
+    var itemDetails: [String: [ReceiptItemDetails]] = [:]
 
     for item in items {
-        let components = item.components(separatedBy: ", Extras: ")
-        if components.count > 0 {
-            if let mainItemWithPrice = parseMainItemWithPrice(components: components, menuItemStore: menuItemStore) {
-                let itemType = mainItemWithPrice.menuItem.type
-                let mainItem = mainItemWithPrice.mainItem
-                let extraItems = components.dropFirst()
-                
-                if typeDetails[itemType] == nil {
-                    typeDetails[itemType] = [:]
-                }
-                
-                if typeDetails[itemType]?[mainItem] == nil {
-                    typeDetails[itemType]?[mainItem] = ReceiptItemDetails(quantity: 1, extras: [:])
-                } else {
-                    typeDetails[itemType]?[mainItem]?.quantity += 1
-                }
-                
-                for extra in extraItems {
-                    let extraName = extra.trimmingCharacters(in: .whitespaces)
-                    if typeDetails[itemType]?[mainItem]?.extras[extraName] == nil {
-                        typeDetails[itemType]?[mainItem]?.extras[extraName] = 1
-                    } else {
-                        typeDetails[itemType]?[mainItem]?.extras[extraName]? += 1
-                    }
-                }
+        if let (mainItem, menuItem) = parseMainItemWithPrice(components: item.components(separatedBy: ", Extras: "), menuItemStore: menuItemStore) {
+            if itemDetails[mainItem] == nil {
+                itemDetails[mainItem] = []
             }
+
+            // Process extras for each item
+            let extraItems = item.components(separatedBy: ", Extras: ").dropFirst()
+            var extras: [String: Int] = [:]
+            for extra in extraItems {
+                let extraName = trimStringAfterFirstParenthesis(extra.trimmingCharacters(in: .whitespaces))
+                extras[extraName] = (extras[extraName] ?? 0) + 1
+            }
+
+            itemDetails[mainItem]?.append(ReceiptItemDetails(quantity: 1, extras: extras))
         }
     }
-    
-    return typeDetails
+    return itemDetails
 }
 
 func parseMainItemWithPrice(components: [String], menuItemStore: MenuItemsStore) -> (mainItem: String, menuItem: MenuItem)? {
@@ -85,7 +76,8 @@ func parseMainItemWithPrice(components: [String], menuItemStore: MenuItemsStore)
     return (mainItem, menuItem)
 }
 
-func createReceiptString(companyName: String, tabdel: String, currentDate: String, orderName: String, orderPrice: Double, additionalMessage: String, typeDetails: [String: [String: ReceiptItemDetails]], menuItemStore: MenuItemsStore) -> String {
+func createReceiptString(companyName: String, tabdel: String, currentDate: String, orderName: String, additionalMessage: String, itemDetails: [String: [ReceiptItemDetails]], menuItemStore: MenuItemsStore) -> String {
+
     var receipt = """
     \(companyName)
     -----------------------------
@@ -95,44 +87,87 @@ func createReceiptString(companyName: String, tabdel: String, currentDate: Strin
     -----------------------------
     """
 
-    var totalOrderPrice: Double = 0.0
+    var itemsByType: [String: [String]] = [:]
 
-    // Define a custom order for types in singular form
-    let customTypeOrder: [String] = ["Starter", "Main", "Side", "Drink"]
+    itemsByType = groupItemsByCategory(itemDetails: itemDetails, menuItemStore: menuItemStore)
 
-    for itemType in customTypeOrder {
-        if let itemDetails = typeDetails.keys.first(where: { $0.lowercased().contains(itemType.lowercased()) }) {
-            receipt += "\nType: \(itemDetails)\n"
-            
-            // Sort items within each type
-            if let items = typeDetails[itemDetails] {
-                for (mainItem, details) in items {
-                    let menuItem = menuItemStore.items.first { $0.name == mainItem }
-                    guard let price = menuItem?.price else {
-                        continue
-                    }
-                    
-                    receipt += "\(mainItem) x \(details.quantity)\n"
-                    totalOrderPrice += Double(details.quantity) * price
-                    
-                    for (extraName, extraQuantity) in details.extras {
-                        receipt += "     \(trimStringAfterFirstParenthesis(extraName)) x \(extraQuantity)\n"
-                    }
-                }
+    let customCategoryOrder = ["Starter", "Main", "Side", "Drink"]
+    
+    let sortedItemsByType = sortItemsByCustomOrder(itemsByType: itemsByType, customCategoryOrder: customCategoryOrder)
+    
+    appendCategoriesToReceipt(receipt: &receipt, sortedItemsByType: sortedItemsByType)
+    
+    appendAdditionalInfoToReceipt(receipt: &receipt, additionalMessage: additionalMessage)
+
+    return receipt
+}
+
+func groupItemsByCategory(itemDetails: [String: [ReceiptItemDetails]], menuItemStore: MenuItemsStore) -> [String: [String]] {
+    var itemsByType: [String: [String]] = [:]
+
+    for (mainItem, detailsArray) in itemDetails {
+        let menuItem = menuItemStore.items.first { $0.name == mainItem }
+        guard let type = menuItem?.type else {
+            continue
+        }
+
+        let category = customCategory(fromType: type)
+
+        if itemsByType[category] == nil {
+            itemsByType[category] = []
+        }
+
+        for details in detailsArray {
+            itemsByType[category]?.append("\(mainItem) x \(details.quantity)")
+            for (extraName, extraQuantity) in details.extras {
+                itemsByType[category]?.append("     \(extraName) x \(extraQuantity)")
             }
         }
     }
 
+    return itemsByType
+}
+
+func customCategory(fromType type: String) -> String {
+    let customCategories: [String: String] = [
+        "starter": "Starter",
+        "main": "Main",
+        "side": "Side",
+        "drink": "Drink"
+    ]
+    
+    let lowercasedType = type.lowercased()
+    return customCategories[lowercasedType] ?? type
+}
+
+func sortItemsByCustomOrder(itemsByType: [String: [String]], customCategoryOrder: [String]) -> [(String, [String])] {
+    return itemsByType.sorted { (entry1, entry2) -> Bool in
+        let type1 = entry1.key
+        let type2 = entry2.key
+        let index1 = customCategoryOrder.firstIndex(of: type1) ?? Int.max
+        let index2 = customCategoryOrder.firstIndex(of: type2) ?? Int.max
+        return index1 < index2
+    }
+}
+
+func appendCategoriesToReceipt(receipt: inout String, sortedItemsByType: [(String, [String])]) {
+    for (type, items) in sortedItemsByType {
+        receipt += """
+        \nType: \(type)\n
+        """
+        receipt += items.joined(separator: "\n")
+        receipt += "\n"
+    }
+}
+
+func appendAdditionalInfoToReceipt(receipt: inout String, additionalMessage: String) {
     receipt += """
     -----------------------------
     NOTE: \(additionalMessage.uppercased())
     POWERED BY AEXIR
     KITCHEN RECEIPT
     -----------------------------
-    TOTAL: $\(totalOrderPrice)
     """
-    
-    return receipt
 }
 
 func trimStringAfterFirstParenthesis(_ input: String) -> String {
